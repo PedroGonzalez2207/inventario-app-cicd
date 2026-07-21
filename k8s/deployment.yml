@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: inventario-app
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: inventario-app
+
+  template:
+    metadata:
+      labels:
+        app: inventario-app
+
+    spec:
+      containers:
+        - name: inventario-app
+          image: ghcr.io/pedrogonzalez2207/inventario-app-cicd:latest
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
