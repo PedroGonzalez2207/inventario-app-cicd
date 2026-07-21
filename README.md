@@ -46,3 +46,135 @@ npm test
 | `APP_COLOR` | `blue` | Color del encabezado — útil para distinguir versiones en un despliegue. |
 | `SIMULATE_FAILURE` | `false` | Si es `true`, `/health` responde siempre `500`. |
 | `DB_PATH` | `./data/products.json` | Ruta del archivo de base de datos local. |
+
+---
+
+# Implementación de CI/CD
+
+Durante esta práctica se implementó un flujo completo de Integración Continua y Despliegue Continuo (CI/CD) utilizando Docker, GitHub Actions, GitHub Container Registry (GHCR) y Kubernetes con Minikube.
+
+## Tecnologías utilizadas
+
+- Node.js
+- Express
+- Docker
+- GitHub Actions
+- GitHub Container Registry (GHCR)
+- Kubernetes
+- Minikube
+
+## Docker
+
+Construcción de la imagen:
+
+```bash
+docker build -t inventario-app .
+```
+
+Ejecución local:
+
+```bash
+docker run -p 3000:3000 inventario-app
+```
+
+## GitHub Actions
+
+El pipeline realiza automáticamente:
+
+1. Instalación de dependencias (`npm ci`)
+2. Ejecución de pruebas (`npm test`)
+3. Construcción de la imagen Docker
+4. Publicación en GitHub Container Registry (GHCR)
+
+## Kubernetes
+
+Archivos utilizados:
+
+```
+k8s/
+├── deployment.yml
+└── service.yml
+```
+
+Despliegue:
+
+```bash
+kubectl apply -f k8s/
+```
+
+Verificación:
+
+```bash
+kubectl get deployments
+
+kubectl get pods
+
+kubectl get services
+```
+
+Acceso a la aplicación:
+
+```bash
+minikube service inventario-app-service
+```
+
+## Rolling Update
+
+Se realizó un Rolling Update modificando la aplicación de:
+
+```
+Version v1 (blue)
+```
+
+a
+
+```
+Version v2 (green)
+```
+
+Posteriormente se ejecutó:
+
+```bash
+kubectl rollout restart deployment/inventario-app
+
+kubectl rollout status deployment/inventario-app
+```
+
+El Deployment reemplazó el Pod anterior por uno nuevo sin necesidad de recrear manualmente el Deployment.
+
+## Prueba de pérdida de datos
+
+Se agregó un producto desde la aplicación.
+
+Posteriormente se eliminó el Pod:
+
+```bash
+kubectl delete pod <nombre-del-pod>
+```
+
+Kubernetes creó automáticamente un nuevo Pod.
+
+Al ingresar nuevamente a la aplicación se comprobó que el producto agregado había desaparecido, demostrando que los datos se almacenaban dentro del contenedor y no en un volumen persistente.
+
+## Evidencias
+
+Agregar las siguientes capturas:
+
+- Aplicación ejecutándose localmente.
+- Docker ejecutando la aplicación.
+- GitHub Actions exitoso.
+- Imagen publicada en GHCR.
+- Deployment en Kubernetes.
+- Pods en ejecución.
+- Services creados.
+- Aplicación desplegada en Minikube.
+- Rolling Update.
+- Prueba de pérdida de datos.
+
+## Conclusión
+
+Se implementó un pipeline de CI/CD que automatiza la construcción, prueba y publicación de imágenes Docker mediante GitHub Actions y despliega la aplicación en Kubernetes utilizando Minikube.
+
+Flujo implementado:
+
+GitHub → GitHub Actions → Docker → GHCR → Kubernetes → Minikube
