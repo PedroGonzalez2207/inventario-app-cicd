@@ -33,6 +33,10 @@ spec:
               containerPort: 3000
               protocol: TCP
 
+          env:
+            - name: STARTUP_DELAY_SECONDS
+              value: "15"    
+
           readinessProbe:
             httpGet:
               path: /health
