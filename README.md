@@ -61,7 +61,7 @@ Eso expone la version nueva a una parte reducida del trafico. Con 4 pods Stable 
 Crear el Secret local:
 
 ```bash
-kubectl create secret generic inventario-app-secret --from-literal=API_KEY="valor-ficticio-local"
+kubectl create secret generic inventario-app-secret --from-literal=API_KEY="<API_KEY_LOCAL>"
 ```
 
 Los deployments Stable y Canary consumen `API_KEY` mediante `secretKeyRef`. El valor no se guarda en Git.
