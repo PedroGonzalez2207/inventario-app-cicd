@@ -3,3 +3,8 @@ npm-debug.log
 .DS_Store
 data/products.json
 data/test-products.json
+RUBRICA.md
+k8s/secret.yml
+k8s/secret.yaml
+.env
+.env.*
