@@ -67,14 +67,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build Docker image locally
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
-          push: true
+          load: true
+          push: false
           tags: |
-            ${{ steps.image.outputs.name }}:latest
             ${{ steps.image.outputs.name }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.name }}:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          vuln-type: os,library
+          severity: CRITICAL
+
+      - name: Publish SHA tag
+        run: docker push "${{ steps.image.outputs.name }}:${{ github.sha }}"
+
+      - name: Publish latest tag
+        run: |
+          docker tag "${{ steps.image.outputs.name }}:${{ github.sha }}" "${{ steps.image.outputs.name }}:latest"
+          docker push "${{ steps.image.outputs.name }}:latest"
