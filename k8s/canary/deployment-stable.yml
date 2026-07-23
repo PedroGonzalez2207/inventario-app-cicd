@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inventario-app-stable
+spec:
+  replicas: 4
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: inventario-app-canary
+      track: stable
+  template:
+    metadata:
+      labels:
+        app: inventario-app-canary
+        track: stable
+    spec:
+      containers:
+        - name: inventario-app-stable
+          image: ghcr.io/pedrogonzalez2207/inventario-app-cicd:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: APP_VERSION
+              value: "v1"
+            - name: APP_COLOR
+              value: "stable"
+            - name: STARTUP_DELAY_SECONDS
+              value: "15"
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: inventario-app-secret
+                  key: API_KEY
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
