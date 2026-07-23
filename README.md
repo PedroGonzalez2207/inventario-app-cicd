@@ -1,21 +1,12 @@
 # inventario-app
 
-Catálogo de inventario con interfaz web y base de datos local. Este repositorio es el **punto de partida** de la tarea de CI/CD — no incluye `Dockerfile`, workflow de GitHub Actions ni manifiestos de Kubernetes: esos tres se construyen como parte del trabajo asignado.
-
-## Qué es
-
-Una app Node.js/Express con:
-
-- **Interfaz web** (`public/index.html`, `public/app.js`, `public/styles.css`): una tabla de productos con formulario para agregar y botón para eliminar.
-- **Base de datos local** (`db.js`): un archivo JSON en `data/products.json` que persiste los productos entre reinicios del proceso — sin motor de base de datos externo ni dependencias nativas.
-- **API REST** consumida por la interfaz.
+Catalogo de inventario con interfaz web, API REST y base de datos local en archivo JSON.
 
 ## Ejecutar en local
 
 ```bash
 npm install
 npm start
-# abrir http://localhost:3000
 ```
 
 ## Pruebas
@@ -24,157 +15,113 @@ npm start
 npm test
 ```
 
-## Endpoints
+## Endpoints principales
 
-| Método y ruta | Qué hace |
-|---|---|
-| `GET /health` | Estado de salud: `200` si el proceso y el archivo de base de datos son accesibles, `500` si no (o si `SIMULATE_FAILURE=true`). |
-| `GET /version` | Devuelve `version`, `color` y `hostname` — configurables por variables de entorno `APP_VERSION` / `APP_COLOR`. |
-| `GET /api/products` | Lista todos los productos. |
-| `GET /api/products/:id` | Devuelve un producto por id. |
-| `POST /api/products` | Crea un producto (`name`, `sku`, `stock`, `price`). |
-| `PATCH /api/products/:id` | Actualiza campos de un producto. |
-| `DELETE /api/products/:id` | Elimina un producto. |
-| `GET /` | Sirve la interfaz web. |
+- `GET /`
+- `GET /health`
+- `GET /version`
+- `GET /api/products`
 
-## Variables de entorno
+## Despliegue base
 
-| Variable | Por defecto | Para qué |
-|---|---|---|
-| `PORT` | `3000` | Puerto del servidor. |
-| `APP_VERSION` | `v1` | Se muestra en `/version` y en el encabezado de la interfaz. |
-| `APP_COLOR` | `blue` | Color del encabezado — útil para distinguir versiones en un despliegue. |
-| `SIMULATE_FAILURE` | `false` | Si es `true`, `/health` responde siempre `500`. |
-| `DB_PATH` | `./data/products.json` | Ruta del archivo de base de datos local. |
+La practica mantiene el despliegue base de Persona 1 con:
 
----
+- Dockerfile multi-stage
+- pipeline CI/CD en GitHub Actions
+- publicacion en GHCR con etiquetas `latest` y `SHA`
+- `k8s/deployment.yml`
+- `k8s/service.yml`
+- RollingUpdate con `maxUnavailable: 1` y `maxSurge: 1`
+- readiness y liveness sobre `/health`
+- `STARTUP_DELAY_SECONDS=15`
 
-# Implementación de CI/CD
+## Persona 2: Canary
 
-Durante esta práctica se implementó un flujo completo de Integración Continua y Despliegue Continuo (CI/CD) utilizando Docker, GitHub Actions, GitHub Container Registry (GHCR) y Kubernetes con Minikube.
+Se implemento una estrategia Canary separada del deployment base en `k8s/canary/`.
 
-## Tecnologías utilizadas
+- Stable: `k8s/canary/deployment-stable.yml`
+- Canary: `k8s/canary/deployment-canary.yml`
+- Service: `k8s/canary/service.yml`
 
-- Node.js
-- Express
-- Docker
-- GitHub Actions
-- GitHub Container Registry (GHCR)
-- Kubernetes
-- Minikube
+La ruta `/version` diferencia Stable y Canary porque devuelve `version` y `color`.
 
-## Docker
+- Stable usa `APP_VERSION=v1` y `APP_COLOR=stable`
+- Canary usa `APP_VERSION=v2` y `APP_COLOR=canary`
 
-Construcción de la imagen:
+El reparto se logra con:
 
-```bash
-docker build -t inventario-app .
-```
+- 4 pods Stable con labels `app: inventario-app-canary` y `track: stable`
+- 1 pod Canary con labels `app: inventario-app-canary` y `track: canary`
+- 1 Service con selector solo `app: inventario-app-canary`
 
-Ejecución local:
+Eso expone la version nueva a una parte reducida del trafico. Con 4 pods Stable y 1 pod Canary, la distribucion esperada es aproximadamente 80/20, pero no es exacta ni garantizada.
+
+## Secret de Kubernetes
+
+Crear el Secret local:
 
 ```bash
-docker run -p 3000:3000 inventario-app
+kubectl create secret generic inventario-app-secret --from-literal=API_KEY="valor-ficticio-local"
 ```
 
-## GitHub Actions
+Los deployments Stable y Canary consumen `API_KEY` mediante `secretKeyRef`. El valor no se guarda en Git.
 
-El pipeline realiza automáticamente:
-
-1. Instalación de dependencias (`npm ci`)
-2. Ejecución de pruebas (`npm test`)
-3. Construcción de la imagen Docker
-4. Publicación en GitHub Container Registry (GHCR)
-
-## Kubernetes
-
-Archivos utilizados:
-
-```
-k8s/
-├── deployment.yml
-└── service.yml
-```
-
-Despliegue:
+## Desplegar Canary
 
 ```bash
-kubectl apply -f k8s/
+kubectl apply -f k8s/canary/deployment-stable.yml
+kubectl apply -f k8s/canary/deployment-canary.yml
+kubectl apply -f k8s/canary/service.yml
+kubectl rollout status deployment/inventario-app-stable
+kubectl rollout status deployment/inventario-app-canary
 ```
 
-Verificación:
+## Verificar
 
 ```bash
 kubectl get deployments
-
-kubectl get pods
-
-kubectl get services
+kubectl get pods --show-labels
+kubectl get pods -l app=inventario-app-canary,track=stable
+kubectl get pods -l app=inventario-app-canary,track=canary
+kubectl get service inventario-app-canary-service
+kubectl get endpoints inventario-app-canary-service
+minikube service inventario-app-canary-service --url
 ```
 
-Acceso a la aplicación:
+Comprobar el Secret sin revelar el valor:
 
 ```bash
-minikube service inventario-app-service
+POD=$(kubectl get pods -l app=inventario-app-canary -o jsonpath="{.items[0].metadata.name}")
+kubectl exec "$POD" -- node -e "console.log('API_KEY configurada:', Boolean(process.env.API_KEY))"
 ```
 
-## Rolling Update
+## Trivy en GitHub Actions
 
-Se realizó un Rolling Update modificando la aplicación de:
+En `.github/workflows/ci-cd.yml`, el job `build-push`:
 
-```
-Version v1 (blue)
-```
+1. construye la imagen localmente con la etiqueta `${{ github.sha }}`
+2. ejecuta Trivy antes de cualquier push
+3. analiza vulnerabilidades de sistema operativo y librerias
+4. filtra severidad `CRITICAL`
+5. falla con `exit-code: 1` si encuentra vulnerabilidades criticas
+6. publica `SHA` y `latest` solo si Trivy pasa
 
-a
+En `pull_request` solo corre pruebas y no publica imagenes.
 
-```
-Version v2 (green)
-```
-
-Posteriormente se ejecutó:
+## Rollback
 
 ```bash
-kubectl rollout restart deployment/inventario-app
-
-kubectl rollout status deployment/inventario-app
+kubectl scale deployment inventario-app-canary --replicas=0
+kubectl scale deployment inventario-app-stable --replicas=4
 ```
 
-El Deployment reemplazó el Pod anterior por uno nuevo sin necesidad de recrear manualmente el Deployment.
-
-## Prueba de pérdida de datos
-
-Se agregó un producto desde la aplicación.
-
-Posteriormente se eliminó el Pod:
+## Limpieza
 
 ```bash
-kubectl delete pod <nombre-del-pod>
+kubectl delete -f k8s/canary/
+kubectl delete secret inventario-app-secret
 ```
 
-Kubernetes creó automáticamente un nuevo Pod.
+## Limitacion de persistencia
 
-Al ingresar nuevamente a la aplicación se comprobó que el producto agregado había desaparecido, demostrando que los datos se almacenaban dentro del contenedor y no en un volumen persistente.
-
-## Evidencias
-
-Agregar las siguientes capturas:
-
-- Aplicación ejecutándose localmente.
-- Docker ejecutando la aplicación.
-- GitHub Actions exitoso.
-- Imagen publicada en GHCR.
-- Deployment en Kubernetes.
-- Pods en ejecución.
-- Services creados.
-- Aplicación desplegada en Minikube.
-- Rolling Update.
-- Prueba de pérdida de datos.
-
-## Conclusión
-
-Se implementó un pipeline de CI/CD que automatiza la construcción, prueba y publicación de imágenes Docker mediante GitHub Actions y despliega la aplicación en Kubernetes utilizando Minikube.
-
-Flujo implementado:
-
-GitHub → GitHub Actions → Docker → GHCR → Kubernetes → Minikube
+Canary no resuelve la perdida de datos. Cada pod sigue usando almacenamiento local, asi que recrear pods puede eliminar cambios no persistidos aunque el reparto de trafico funcione.
